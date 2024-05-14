@@ -17,6 +17,8 @@
  */
 package org.apache.drill.exec.store.mongo;
 
+import java.util.Date;
+
 import org.apache.drill.common.FunctionNames;
 import org.apache.drill.common.expression.CastExpression;
 import org.apache.drill.common.expression.ConvertExpression;
@@ -31,9 +33,9 @@ import org.apache.drill.common.expression.ValueExpressions.IntExpression;
 import org.apache.drill.common.expression.ValueExpressions.LongExpression;
 import org.apache.drill.common.expression.ValueExpressions.QuotedString;
 import org.apache.drill.common.expression.ValueExpressions.TimeExpression;
+import org.apache.drill.common.expression.ValueExpressions.TimeStampExpression;
 import org.apache.drill.common.expression.ValueExpressions.VarDecimalExpression;
 import org.apache.drill.common.expression.visitors.AbstractExprVisitor;
-
 import org.apache.drill.shaded.guava.com.google.common.collect.ImmutableMap;
 import org.apache.drill.shaded.guava.com.google.common.collect.ImmutableSet;
 
@@ -228,6 +230,11 @@ public class MongoCompareFunctionProcessor extends
       this.path = path;
       return true;
     }
+    if (valueArg instanceof TimeStampExpression) {
+    Long unixseconds = ((TimeStampExpression) valueArg).getTimeStamp();
+    this.value = new Date(unixseconds);
+    this.path = path;
+    return true;}
 
     return false;
   }

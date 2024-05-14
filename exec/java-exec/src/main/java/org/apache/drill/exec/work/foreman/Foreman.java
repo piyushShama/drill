@@ -266,7 +266,7 @@ public class Foreman implements Runnable {
         parseAndRunPhysicalPlan(queryRequest.getPlan());
         break;
       case SQL:
-        final String sql = queryRequest.getPlan();
+        final String sql = queryRequest.getPlan().replace("`COUNT(*)`", "`COUNT`");
         // log query id, username and query text before starting any real work. Also, put
         // them together such that it is easy to search based on query id
         logger.info("Query text for query with id {} issued by {}: {}", queryIdString,
