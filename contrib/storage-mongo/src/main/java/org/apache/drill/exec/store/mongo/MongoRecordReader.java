@@ -28,8 +28,6 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import com.mongodb.client.MongoIterable;
-import com.mongodb.client.model.Aggregates;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
@@ -43,6 +41,9 @@ import org.apache.drill.exec.store.bson.BsonRecordReader;
 import org.apache.drill.exec.vector.BaseValueVector;
 import org.apache.drill.exec.vector.complex.fn.JsonReader;
 import org.apache.drill.exec.vector.complex.impl.VectorContainerWriter;
+import org.apache.drill.shaded.guava.com.google.common.base.Stopwatch;
+import org.apache.drill.shaded.guava.com.google.common.collect.Lists;
+import org.apache.drill.shaded.guava.com.google.common.collect.Sets;
 import org.bson.BsonDocument;
 import org.bson.BsonDocumentReader;
 import org.bson.Document;
@@ -50,15 +51,14 @@ import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.drill.shaded.guava.com.google.common.base.Charsets;
-import org.apache.drill.shaded.guava.com.google.common.base.Stopwatch;
-import org.apache.drill.shaded.guava.com.google.common.collect.Lists;
-import org.apache.drill.shaded.guava.com.google.common.collect.Sets;
-import com.mongodb.client.MongoClient;
 import com.mongodb.ServerAddress;
+import com.mongodb.ServerCursor;
+import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.MongoIterable;
+import com.mongodb.client.model.Aggregates;
 
 public class MongoRecordReader extends AbstractRecordReader {
   private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.class);
@@ -206,7 +206,59 @@ public class MongoRecordReader extends AbstractRecordReader {
       } else {
         projection = collection.find(filters).projection(fields);
       }
-      cursor = projection.batchSize(plugin.getConfig().getBatchSize()).iterator();
+      
+      
+      if(fields.containsKey("_id") && fields.containsKey("count") && fields.size()==2) {
+			cursor = new MongoCursor<BsonDocument>() {
+				boolean isNextAvailable=true;
+				
+				@Override
+				public void close() {
+				}
+
+				@Override
+				public boolean hasNext() {
+					return isNextAvailable;
+				}
+
+				@Override
+				public BsonDocument next() {
+					isNextAvailable=false;
+					Bson filter= operations.stream().filter(o->o.toBsonDocument(BsonDocument.class,null).containsKey("$match")).findAny().orElse(null);
+					logger.info("filter {}",filter);
+					if(filter!=null)
+					{
+						Bson finalFilter=(Bson)filter.toBsonDocument(BsonDocument.class,null).get("$match");
+						return new Document("count", collection.countDocuments(finalFilter)).toBsonDocument();	
+
+					}else {
+						return new Document("count", collection.estimatedDocumentCount()).toBsonDocument();	
+					}
+				}
+
+				@Override
+				public BsonDocument tryNext() {
+					return null;
+				}
+
+				@Override
+				public ServerCursor getServerCursor() {
+					return null;
+				}
+
+				@Override
+				public ServerAddress getServerAddress() {
+					return null;
+				}
+
+			};
+    	  
+      }else {
+    	  logger.info("before");
+          logger.info("records {} , fields {}, operations {} ", collection.estimatedDocumentCount(),fields,operations);
+          logger.info("after");
+          cursor = projection.batchSize(plugin.getConfig().getBatchSize()).iterator();
+      }
     }
 
     writer.allocate();
@@ -221,9 +273,9 @@ public class MongoRecordReader extends AbstractRecordReader {
         if (isBsonRecordReader) {
           BsonDocument bsonDocument = cursor.next();
           bsonReader.write(writer, new BsonDocumentReader(bsonDocument));
+          logger.info("bson {}",bsonDocument);
         } else {
           String doc = cursor.next().toJson();
-          jsonReader.setSource(doc.getBytes(Charsets.UTF_8));
           jsonReader.write(writer);
         }
         docCount++;
@@ -236,7 +288,7 @@ public class MongoRecordReader extends AbstractRecordReader {
       }
 
       writer.setValueCount(docCount);
-      logger.debug("Took {} ms to get {} records", watch.elapsed(TimeUnit.MILLISECONDS), docCount);
+      logger.info("Took {} ms to get {} records", watch.elapsed(TimeUnit.MILLISECONDS), docCount);
       return docCount;
     } catch (IOException e) {
       String msg = "Failure while reading document. - Parser was at record: " + (docCount + 1);

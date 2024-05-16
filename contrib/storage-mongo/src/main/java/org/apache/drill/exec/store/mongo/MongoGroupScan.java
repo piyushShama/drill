@@ -32,12 +32,6 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import com.fasterxml.jackson.annotation.JacksonInject;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonTypeName;
-import com.mongodb.client.MongoClient;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.drill.common.PlanStringBuilder;
 import org.apache.drill.common.exceptions.DrillRuntimeException;
@@ -53,13 +47,6 @@ import org.apache.drill.exec.store.StoragePluginRegistry;
 import org.apache.drill.exec.store.mongo.MongoSubScan.MongoSubScanSpec;
 import org.apache.drill.exec.store.mongo.MongoSubScan.ShardedMongoSubScanSpec;
 import org.apache.drill.exec.store.mongo.common.ChunkInfo;
-import org.bson.Document;
-import org.bson.codecs.BsonTypeClassMap;
-import org.bson.codecs.DocumentCodec;
-import org.bson.conversions.Bson;
-import org.bson.types.MaxKey;
-import org.bson.types.MinKey;
-
 import org.apache.drill.shaded.guava.com.google.common.annotations.VisibleForTesting;
 import org.apache.drill.shaded.guava.com.google.common.base.Joiner;
 import org.apache.drill.shaded.guava.com.google.common.base.Preconditions;
@@ -67,14 +54,27 @@ import org.apache.drill.shaded.guava.com.google.common.base.Stopwatch;
 import org.apache.drill.shaded.guava.com.google.common.collect.Lists;
 import org.apache.drill.shaded.guava.com.google.common.collect.Maps;
 import org.apache.drill.shaded.guava.com.google.common.collect.Sets;
+import org.bson.Document;
+import org.bson.codecs.BsonTypeClassMap;
+import org.bson.codecs.DocumentCodec;
+import org.bson.conversions.Bson;
+import org.bson.types.MaxKey;
+import org.bson.types.MinKey;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.annotation.JacksonInject;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.mongodb.ReadPreference;
 import com.mongodb.ServerAddress;
 import com.mongodb.client.FindIterable;
+import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 @JsonTypeName("mongo-scan")
 public class MongoGroupScan extends AbstractGroupScan implements
@@ -158,8 +158,9 @@ public class MongoGroupScan extends AbstractGroupScan implements
 
   @SuppressWarnings({ "rawtypes" })
   private void init() {
-
-    List<String> h = storagePluginConfig.getHosts();
+	  
+	  logger.info("Executing the mongodb query");
+	  List<String> h = storagePluginConfig.getHosts();
     List<ServerAddress> addresses = Lists.newArrayList();
     for (String host : h) {
       addresses.add(new ServerAddress(host));
@@ -168,8 +169,11 @@ public class MongoGroupScan extends AbstractGroupScan implements
     chunksMapping = Maps.newHashMap();
     chunksInverseMapping = Maps.newLinkedHashMap();
     if (useAggregate && isShardedCluster(client)) {
+  	  logger.info("using aggregate and is sharded");
+
       handleUnshardedCollection(getPrimaryShardInfo());
     } else if (isShardedCluster(client)) {
+      logger.info("is shareded");
       MongoDatabase db = client.getDatabase(CONFIG);
       MongoCollection<Document> chunksCollection = db.getCollection(CHUNKS);
       Document filter = new Document();
@@ -253,6 +257,7 @@ public class MongoGroupScan extends AbstractGroupScan implements
         handleUnshardedCollection(getPrimaryShardInfo());
       }
     } else {
+      logger.info("non shared cluster");
       handleUnshardedCollection(storagePluginConfig.getHosts());
     }
 

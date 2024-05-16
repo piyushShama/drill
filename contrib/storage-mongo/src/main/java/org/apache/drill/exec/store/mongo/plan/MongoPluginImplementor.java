@@ -99,19 +99,14 @@ public class MongoPluginImplementor extends AbstractPluginImplementor {
 
 		logger.info("PluginAggregateRel start:  implement logic to execute the query");
 		runAggregate = true;
-		logger.info("Initial operations {}", operations);
 		visitChild(aggregate.getInput());
-		logger.info("The operations after visitChild method call {}, rowType {} ", operations,
-				aggregate.getInput().getRowType());
-
 		List<String> inNames1 = MongoAggregateUtils.mongoFieldNames(aggregate.getInput().getRowType());
 		List<String> outNames1 = MongoAggregateUtils.mongoFieldNames(aggregate.getRowType());
 		logger.info("getAggregateOperations   inNames {}, outNames {}", inNames1, outNames1);
 		operations.addAll(MongoAggregateUtils.getAggregateOperations(aggregate, aggregate.getInput().getRowType()));
-		logger.info("all operations {}", operations);
 		List<String> outNames = MongoAggregateUtils.mongoFieldNames(aggregate.getRowType());
 		columns = outNames.stream().map(SchemaPath::getSimplePath).collect(Collectors.toList());
-		logger.info("PluginAggregateRel end: outnames {},columns {}", outNames, columns);
+		logger.info("PluginAggregateRel end: outnames {},columns {} and operations {}", outNames, columns, operations);
 	}
 
 	@Override
@@ -180,13 +175,7 @@ public class MongoPluginImplementor extends AbstractPluginImplementor {
 			logger.info("projection {}", projection);
 			if(!projection.toString().trim().equals(occ)){operations.add(projection); }
 			 
-			List<String> outNames = null;
-			if (items.size() == 1) {
-				BsonString value = (BsonString) items.get(0).getValue();
-				outNames = Arrays.asList(value.getValue().replace("$", ""));
-			} else {
-				outNames = MongoAggregateUtils.mongoFieldNames(project.getRowType());
-			}
+			List<String> outNames = MongoAggregateUtils.mongoFieldNames(project.getRowType());
 			logger.info("PluginProjectRel outNames {}", outNames);
 			this.columns = outNames.stream().map(SchemaPath::getSimplePath).collect(Collectors.toList());
 		} else {
@@ -259,6 +248,7 @@ public class MongoPluginImplementor extends AbstractPluginImplementor {
 				.collect(Collectors.toList());
 		filters = Optional.ofNullable(groupScan.getScanSpec().getFilters()).map(Document::parse).orElse(null);
 		columns = groupScan.getColumns();
+		logger.info("filters {}, operations{}, columns {}",filters,operations,columns);
 		logger.info("StoragePluginTableScan end");
 
 	}

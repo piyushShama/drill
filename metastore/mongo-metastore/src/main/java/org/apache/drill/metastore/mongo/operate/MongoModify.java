@@ -75,6 +75,7 @@ public class MongoModify<T> extends AbstractModify<T> {
   }
 
   private void executeOperations(List<MongoOperation> operations) {
+	  logger.info("executeOperations");
     ClientSession clientSession = context.client().startSession();
     String res = clientSession.withTransaction(() -> {
       operations.forEach(o -> o.execute(context.table()));

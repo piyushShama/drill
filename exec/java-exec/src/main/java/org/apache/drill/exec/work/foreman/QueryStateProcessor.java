@@ -17,6 +17,8 @@
  */
 package org.apache.drill.exec.work.foreman;
 
+import java.util.Arrays;
+
 import org.apache.drill.common.EventProcessor;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.proto.UserBitShared.QueryResult.QueryState;
@@ -67,7 +69,7 @@ public class QueryStateProcessor implements AutoCloseable {
    */
   public synchronized void moveToState(QueryState newState, Exception exception) {
     logger.debug(queryIdString + ": State change requested {} --> {}", state, newState);
-
+    
     switch (state) {
       case PREPARING:
         preparing(newState, exception);

@@ -17,15 +17,20 @@
  */
 package org.apache.drill.exec.store.mongo;
 
-import com.mongodb.client.model.Accumulators;
-import com.mongodb.client.model.Aggregates;
-import com.mongodb.client.model.BsonField;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.function.BiFunction;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
+
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.drill.exec.store.mongo.common.MongoOp;
+import org.apache.drill.exec.store.mongo.plan.MongoPluginImplementor;
 import org.bson.BsonArray;
 import org.bson.BsonDocument;
 import org.bson.BsonElement;
@@ -34,21 +39,24 @@ import org.bson.BsonNull;
 import org.bson.BsonString;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.function.BiFunction;
-import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
+import com.mongodb.client.model.Accumulators;
+import com.mongodb.client.model.Aggregates;
+import com.mongodb.client.model.BsonField;
 
 public class MongoAggregateUtils {
+	private static final Logger logger = LoggerFactory.getLogger(MongoAggregateUtils.class);
 
   public static List<String> mongoFieldNames(RelDataType rowType) {
+	  
     List<String> renamed = rowType.getFieldNames().stream()
         .map(name -> name.startsWith("$") ? "_" + name.substring(2) : name)
         .collect(Collectors.toList());
-    return SqlValidatorUtil.uniquify(renamed, true);
+    
+    List<String> res= SqlValidatorUtil.uniquify(renamed, true);
+    return res;
   }
 
   public static String maybeQuote(String s) {
@@ -74,6 +82,7 @@ public class MongoAggregateUtils {
   }
 
   public static List<Bson> getAggregateOperations(Aggregate aggregate, RelDataType rowType) {
+	  logger.info("Aggegate pipeline is being executed");
     List<String> inNames = mongoFieldNames(rowType);
     List<String> outNames = mongoFieldNames(aggregate.getRowType());
     Object id;
@@ -123,6 +132,8 @@ public class MongoAggregateUtils {
   }
 
   private static BsonField bsonAggregate(List<String> inNames, String outName, AggregateCall aggCall) {
+	  logger.info("bsonAggregate pipeline is being executed");
+
     String aggregationName = aggCall.getAggregation().getName();
     List<Integer> args = aggCall.getArgList();
     if (aggregationName.equals(SqlStdOperatorTable.COUNT.getName())) {

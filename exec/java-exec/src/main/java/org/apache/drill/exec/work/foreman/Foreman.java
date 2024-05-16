@@ -272,6 +272,7 @@ public class Foreman implements Runnable {
         logger.info("Query text for query with id {} issued by {}: {}", queryIdString,
             queryContext.getQueryUserName(), sql);
         runSQL(sql);
+        logger.info("ran sql");
         break;
       case EXECUTION:
         runFragment(queryRequest.getFragmentsList());
