@@ -191,7 +191,44 @@ private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.c
       logger.debug(" Intialized JsonRecordReader. ");
     }
   }
+  
+  static class BsonAttributes{
+	  private BsonDocument document;
+	  private int index;
+	public BsonDocument getDocument() {
+		return document;
+	}
+	public void setDocument(BsonDocument document) {
+		this.document = document;
+	}
+	public int getIndex() {
+		return index;
+	}
+	public void setIndex(int index) {
+		this.index = index;
+	}
+	@Override
+	public String toString() {
+		return "BsonAttributes [document=" + document + ", index=" + index + "]";
+	}
+	
+	
+	  
+  }
 
+  private static BsonAttributes getFirstProject(List<Bson> operations) {
+	  int index=0;
+      for (Bson operation : operations) {
+    	  index++;
+          if (operation.toBsonDocument(Document.class, null).containsKey("$project")) {
+        	  BsonAttributes attr=new BsonAttributes();
+        	  attr.setDocument(operation.toBsonDocument(BsonDocument.class, null).get("$project").asDocument());
+        	  attr.setIndex(index);
+              return  attr;
+          }
+      }
+      return null;
+  }
   @Override
   public int next() {
     if (cursor == null) {
@@ -207,16 +244,16 @@ private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.c
       else if(fields.containsKey("_id") && fields.containsKey(COUNT) && fields.size()==3) {
     	 String field=fields.keySet().stream().filter(o-> !o.equals("_id") && !o.equals(COUNT)).findAny().orElse(null);
     	 logger.info("field {}",field);
-    	 Bson project=(Bson) operations.get(1).toBsonDocument(BsonDocument.class,null).get("$project");
+    	 BsonAttributes project=getFirstProject(operations);
     	 logger.info("project {}",project);
-    	 BsonValue reqVal= project.toBsonDocument(BsonDocument.class,null).get(field);
+    	 BsonValue reqVal= project.getDocument().get(field);
     	 logger.info("req val {}",reqVal);
     	 if(reqVal instanceof BsonString) {
     		 BsonDocument document=operations.get(2).toBsonDocument(BsonDocument.class,null).get("$group").asDocument();
         	 document.put("_id", new  BsonString(((BsonString)reqVal).getValue()));
-        	 operations.remove(1);	 
-    	 }else {
-        	 operations.remove(1);	 
+        	 operations.remove(project.getIndex()-1);	 
+    	 }else if(!(reqVal instanceof BsonDocument)){
+        	 operations.remove(project.getIndex()-1);	 
     	 }
     	
     	 logger.info("updated operations {} ",operations);
