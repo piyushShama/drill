@@ -209,11 +209,16 @@ private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.c
     	 logger.info("field {}",field);
     	 Bson project=(Bson) operations.get(1).toBsonDocument(BsonDocument.class,null).get("$project");
     	 logger.info("project {}",project);
-    	 BsonString reqVal=(BsonString) project.toBsonDocument(BsonDocument.class,null).get(field);
+    	 BsonValue reqVal= project.toBsonDocument(BsonDocument.class,null).get(field);
     	 logger.info("req val {}",reqVal);
-    	 BsonDocument document=operations.get(2).toBsonDocument(BsonDocument.class,null).get("$group").asDocument();
-    	 document.put("_id", new  BsonString(reqVal.getValue()));
-    	 operations.remove(1);
+    	 if(reqVal instanceof BsonString) {
+    		 BsonDocument document=operations.get(2).toBsonDocument(BsonDocument.class,null).get("$group").asDocument();
+        	 document.put("_id", new  BsonString(((BsonString)reqVal).getValue()));
+        	 operations.remove(1);	 
+    	 }else {
+        	 operations.remove(1);	 
+    	 }
+    	
     	 logger.info("updated operations {} ",operations);
     	 cursor= getProjection().batchSize(plugin.getConfig().getBatchSize()).iterator();
       } 
