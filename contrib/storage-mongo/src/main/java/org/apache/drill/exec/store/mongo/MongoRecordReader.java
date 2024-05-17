@@ -23,6 +23,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -44,8 +45,11 @@ import org.apache.drill.exec.vector.complex.impl.VectorContainerWriter;
 import org.apache.drill.shaded.guava.com.google.common.base.Stopwatch;
 import org.apache.drill.shaded.guava.com.google.common.collect.Lists;
 import org.apache.drill.shaded.guava.com.google.common.collect.Sets;
+import org.apache.hadoop.fs.shell.Count;
 import org.bson.BsonDocument;
 import org.bson.BsonDocumentReader;
+import org.bson.BsonString;
+import org.bson.BsonValue;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
@@ -61,7 +65,9 @@ import com.mongodb.client.MongoIterable;
 import com.mongodb.client.model.Aggregates;
 
 public class MongoRecordReader extends AbstractRecordReader {
-  private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.class);
+  private static final String COUNT = "count";
+
+private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.class);
 
   private MongoCollection<BsonDocument> collection;
   private MongoCursor<BsonDocument> cursor;
@@ -191,73 +197,29 @@ public class MongoRecordReader extends AbstractRecordReader {
     if (cursor == null) {
       logger.debug("Filters Applied : " + filters);
       logger.debug("Fields Selected :" + fields);
-
-      MongoIterable<BsonDocument> projection;
-      if (CollectionUtils.isNotEmpty(operations)) {
-        List<Bson> operations = new ArrayList<>(this.operations);
-        if (!fields.isEmpty()) {
-          operations.add(Aggregates.project(fields));
-        }
-        if (plugin.getConfig().allowDiskUse()) {
-          projection = collection.aggregate(operations).allowDiskUse(true);
-        } else {
-          projection = collection.aggregate(operations);
-        }
-      } else {
-        projection = collection.find(filters).projection(fields);
-      }
+      logger.info(" fields {}, operations {} ",fields,operations);
       
-      
-      if(fields.containsKey("_id") && fields.containsKey("count") && fields.size()==2) {
-			cursor = new MongoCursor<BsonDocument>() {
-				boolean isNextAvailable=true;
-				
-				@Override
-				public void close() {
-				}
-
-				@Override
-				public boolean hasNext() {
-					return isNextAvailable;
-				}
-
-				@Override
-				public BsonDocument next() {
-					isNextAvailable=false;
-					Bson filter= operations.stream().filter(o->o.toBsonDocument(BsonDocument.class,null).containsKey("$match")).findAny().orElse(null);
-					logger.info("filter {}",filter);
-					if(filter!=null)
-					{
-						Bson finalFilter=(Bson)filter.toBsonDocument(BsonDocument.class,null).get("$match");
-						return new Document("count", collection.countDocuments(finalFilter)).toBsonDocument();	
-
-					}else {
-						return new Document("count", collection.estimatedDocumentCount()).toBsonDocument();	
-					}
-				}
-
-				@Override
-				public BsonDocument tryNext() {
-					return null;
-				}
-
-				@Override
-				public ServerCursor getServerCursor() {
-					return null;
-				}
-
-				@Override
-				public ServerAddress getServerAddress() {
-					return null;
-				}
-
-			};
-    	  
-      }else {
-    	  logger.info("before");
-          logger.info("records {} , fields {}, operations {} ", collection.estimatedDocumentCount(),fields,operations);
-          logger.info("after");
-          cursor = projection.batchSize(plugin.getConfig().getBatchSize()).iterator();
+      // big number charts
+      if(fields.containsKey("_id") && fields.containsKey(COUNT) && fields.size()==2) {
+			cursor=getCursorForBigNumbers();
+      } 
+      // bar or pie charts with a column and count
+      else if(fields.containsKey("_id") && fields.containsKey(COUNT) && fields.size()==3) {
+    	 String field=fields.keySet().stream().filter(o-> !o.equals("_id") && !o.equals(COUNT)).findAny().orElse(null);
+    	 logger.info("field {}",field);
+    	 Bson project=(Bson) operations.get(1).toBsonDocument(BsonDocument.class,null).get("$project");
+    	 logger.info("project {}",project);
+    	 BsonString reqVal=(BsonString) project.toBsonDocument(BsonDocument.class,null).get(field);
+    	 logger.info("req val {}",reqVal);
+    	 BsonDocument document=operations.get(2).toBsonDocument(BsonDocument.class,null).get("$group").asDocument();
+    	 document.put("_id", new  BsonString(reqVal.getValue()));
+    	 operations.remove(1);
+    	 logger.info("updated operations {} ",operations);
+    	 cursor= getProjection().batchSize(plugin.getConfig().getBatchSize()).iterator();
+      } 
+      // other cases
+      else {
+          cursor = getProjection().batchSize(plugin.getConfig().getBatchSize()).iterator();
       }
     }
 
@@ -296,6 +258,82 @@ public class MongoRecordReader extends AbstractRecordReader {
       throw new DrillRuntimeException(msg, e);
     }
   }
+
+
+  /**
+   * @resposnible to get the projection
+   * @return
+   */
+	private MongoIterable<BsonDocument> getProjection() {
+		MongoIterable<BsonDocument> projection;
+		if (CollectionUtils.isNotEmpty(operations)) {
+			List<Bson> operations = new ArrayList<>(this.operations);
+			if (!fields.isEmpty()) {
+				operations.add(Aggregates.project(fields));
+			}
+			if (plugin.getConfig().allowDiskUse()) {
+				projection = collection.aggregate(operations).allowDiskUse(true);
+			} else {
+				projection = collection.aggregate(operations);
+			}
+		} else {
+			projection = collection.find(filters).projection(fields);
+		}
+
+		return projection;
+	}
+
+  
+  /**
+   * @responsible to get cursor for big number charts
+   * @return
+   */
+private MongoCursor<BsonDocument> getCursorForBigNumbers() {
+	return  new MongoCursor<BsonDocument>() {
+		boolean isNextAvailable=true;
+		
+		@Override
+		public void close() {
+			//there is no need to close anything
+		}
+
+		@Override
+		public boolean hasNext() {
+			return isNextAvailable;
+		}
+
+		@Override
+		public BsonDocument next() {
+			isNextAvailable=false;
+			Bson filter= operations.stream().filter(o->o.toBsonDocument(BsonDocument.class,null).containsKey("$match")).findAny().orElse(null);
+			logger.info("filter {}",filter);
+			if(filter!=null)
+			{
+				Bson finalFilter=(Bson)filter.toBsonDocument(BsonDocument.class,null).get("$match");
+				return new Document(COUNT, collection.countDocuments(finalFilter)).toBsonDocument();	
+
+			}else {
+				return new Document(COUNT, collection.estimatedDocumentCount()).toBsonDocument();	
+			}
+		}
+
+		@Override
+		public BsonDocument tryNext() {
+			return null;
+		}
+
+		@Override
+		public ServerCursor getServerCursor() {
+			return null;
+		}
+
+		@Override
+		public ServerAddress getServerAddress() {
+			return null;
+		}
+
+	};
+}
 
   @Override
   public void close() {
