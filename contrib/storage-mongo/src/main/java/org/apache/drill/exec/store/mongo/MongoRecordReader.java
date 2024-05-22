@@ -23,7 +23,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -45,13 +44,13 @@ import org.apache.drill.exec.vector.complex.impl.VectorContainerWriter;
 import org.apache.drill.shaded.guava.com.google.common.base.Stopwatch;
 import org.apache.drill.shaded.guava.com.google.common.collect.Lists;
 import org.apache.drill.shaded.guava.com.google.common.collect.Sets;
-import org.apache.hadoop.fs.shell.Count;
 import org.bson.BsonDocument;
 import org.bson.BsonDocumentReader;
 import org.bson.BsonString;
 import org.bson.BsonValue;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.mortbay.log.Log;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,14 +62,18 @@ import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.MongoIterable;
 import com.mongodb.client.model.Aggregates;
+import com.mongodb.client.model.CountOptions;
 
 public class MongoRecordReader extends AbstractRecordReader {
   private static final String COUNT = "count";
+  private static final String COUNT_2 = "COUNT";
+
 
 private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.class);
 
   private MongoCollection<BsonDocument> collection;
   private MongoCursor<BsonDocument> cursor;
+  private MongoDatabase db;
 
   private JsonReader jsonReader;
   private BsonRecordReader bsonReader;
@@ -167,7 +170,7 @@ private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.c
       addresses.add(new ServerAddress(host));
     }
     MongoClient client = plugin.getClient(addresses);
-    MongoDatabase db = client.getDatabase(subScanSpec.getDbName());
+    db = client.getDatabase(subScanSpec.getDbName());
     this.unionEnabled = fragmentContext.getOptions().getBoolean(ExecConstants.ENABLE_UNION_TYPE_KEY);
     collection = db.getCollection(subScanSpec.getCollectionName(), BsonDocument.class);
   }
@@ -237,11 +240,13 @@ private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.c
       logger.info(" fields {}, operations {} ",fields,operations);
       
       // big number charts
-      if(fields.containsKey("_id") && fields.containsKey(COUNT) && fields.size()==2) {
+      if(fields.containsKey("_id") && (fields.containsKey(COUNT)||  fields.containsKey(COUNT_2))&& fields.size()==2) {
+    	  	logger.info("first case");
 			cursor=getCursorForBigNumbers();
       } 
       // bar or pie charts with a column and count
-      else if(fields.containsKey("_id") && fields.containsKey(COUNT) && fields.size()==3) {
+      else if(fields.containsKey("_id") && (fields.containsKey(COUNT)||  fields.containsKey(COUNT_2)) && fields.size()==3) {
+    	  logger.info("second case");
     	 String field=fields.keySet().stream().filter(o-> !o.equals("_id") && !o.equals(COUNT)).findAny().orElse(null);
     	 logger.info("field {}",field);
     	 BsonAttributes project=getFirstProject(operations);
@@ -261,6 +266,7 @@ private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.c
       } 
       // other cases
       else {
+    	  logger.info("3rd case");
           cursor = getProjection().batchSize(plugin.getConfig().getBatchSize()).iterator();
       }
     }
@@ -349,16 +355,17 @@ private MongoCursor<BsonDocument> getCursorForBigNumbers() {
 			isNextAvailable=false;
 			Bson filter= operations.stream().filter(o->o.toBsonDocument(BsonDocument.class,null).containsKey("$match")).findAny().orElse(null);
 			logger.info("filter {}",filter);
-			if(filter!=null)
-			{
+			Document input= new Document("count", collection.getNamespace().getCollectionName());
+			
+			if(filter!=null){
 				Bson finalFilter=(Bson)filter.toBsonDocument(BsonDocument.class,null).get("$match");
-				return new Document(COUNT, collection.countDocuments(finalFilter)).toBsonDocument();	
-
-			}else {
-				return new Document(COUNT, collection.estimatedDocumentCount()).toBsonDocument();	
+				input=  input.append("query", finalFilter);
 			}
+			
+			Document result= db.runCommand(input);
+			return new Document(COUNT, result.getInteger("n")).toBsonDocument();
 		}
-
+                                             
 		@Override
 		public BsonDocument tryNext() {
 			return null;
