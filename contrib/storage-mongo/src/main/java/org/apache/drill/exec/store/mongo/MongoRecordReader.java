@@ -232,6 +232,21 @@ private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.c
       }
       return null;
   }
+  
+  
+  private static BsonAttributes getFirstGroup(List<Bson> operations) {
+	  int index=0;
+      for (Bson operation : operations) {
+    	  index++;
+          if (operation.toBsonDocument(Document.class, null).containsKey("$group")) {
+        	  BsonAttributes attr=new BsonAttributes();
+        	  attr.setDocument(operation.toBsonDocument(BsonDocument.class, null).get("$group").asDocument());
+        	  attr.setIndex(index);
+              return  attr;
+          }
+      }
+      return null;
+  }
   @Override
   public int next() {
     if (cursor == null) {
@@ -254,8 +269,10 @@ private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.c
     	 BsonValue reqVal= project.getDocument().get(field);
     	 logger.info("req val {}",reqVal);
     	 if(reqVal instanceof BsonString) {
-    		 BsonDocument document=operations.get(2).toBsonDocument(BsonDocument.class,null).get("$group").asDocument();
-        	 document.put("_id", new  BsonString(((BsonString)reqVal).getValue()));
+    		 BsonAttributes bsonAttributes=getFirstGroup(operations);
+    		 if(bsonAttributes!=null)
+    			 bsonAttributes.getDocument().put("_id", new  BsonString(((BsonString)reqVal).getValue()));
+    		 
         	 operations.remove(project.getIndex()-1);	 
     	 }else if(!(reqVal instanceof BsonDocument)){
         	 operations.remove(project.getIndex()-1);	 
