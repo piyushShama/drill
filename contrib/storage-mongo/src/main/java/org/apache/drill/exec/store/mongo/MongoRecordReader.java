@@ -261,7 +261,7 @@ private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.c
       } 
       // bar or pie charts with a column and count
       else if(fields.containsKey("_id") && (fields.containsKey(COUNT)||  fields.containsKey(COUNT_2)) && fields.size()==3) {
-    	  logger.info("second case");
+    	 logger.info("second case");
     	 String field=fields.keySet().stream().filter(o-> !o.equals("_id") && !o.equals(COUNT)).findAny().orElse(null);
     	 logger.info("field {}",field);
     	 BsonAttributes project=getFirstProject(operations);
@@ -281,9 +281,36 @@ private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.c
     	 logger.info("updated operations {} ",operations);
     	 cursor= getProjection().batchSize(plugin.getConfig().getBatchSize()).iterator();
       } 
+      else if(fields.containsKey("_id") && (fields.containsKey(COUNT)||  fields.containsKey(COUNT_2)) && fields.size()>3) {
+     	 logger.info("third case");
+     	 List<String> columns=fields.keySet().stream().filter(o-> !o.equals("_id") && !o.equals(COUNT)).collect(Collectors.toList());
+     	 logger.info("fields {}",columns);
+     	 BsonAttributes project=getFirstProject(operations);
+     	 logger.info("project {}",project);
+     	 columns.stream().map(o->{
+     		ProjectionHelper projectionHelper=new ProjectionHelper();
+     		projectionHelper.setKey(o);
+     		projectionHelper.setValue(project.getDocument().get(o));
+     		return projectionHelper;
+     	 }).forEach(reqVal->{
+     		if(reqVal.getValue()  instanceof BsonString) {
+        		 BsonAttributes bsonAttributes=getFirstGroup(operations);
+        		 if(bsonAttributes!=null){
+        			 BsonDocument bsonDocument= (BsonDocument) bsonAttributes.getDocument().get("_id");
+        			 bsonDocument.append(reqVal.getKey(), reqVal.getValue());
+        		 }
+        	 }
+     	 });
+     	 
+     	 if(project!=null)
+     		 operations.remove(project.getIndex()-1);	 
+     	 
+     	 logger.info("updated operations {} ",operations);
+     	 cursor= getProjection().batchSize(plugin.getConfig().getBatchSize()).iterator();
+      }
       // other cases
       else {
-    	  logger.info("3rd case");
+    	  logger.info("drill's default case");
           cursor = getProjection().batchSize(plugin.getConfig().getBatchSize()).iterator();
       }
     }
@@ -323,6 +350,28 @@ private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.c
       throw new DrillRuntimeException(msg, e);
     }
   }
+  
+	static class ProjectionHelper {
+		private String key;
+		private BsonValue value;
+
+		public String getKey() {
+			return key;
+		}
+
+		public void setKey(String key) {
+			this.key = key;
+		}
+
+		public BsonValue getValue() {
+			return value;
+		}
+
+		public void setValue(BsonValue value) {
+			this.value = value;
+		}
+
+	}
 
 
   /**
